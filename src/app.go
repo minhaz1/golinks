@@ -1,6 +1,5 @@
 package main
 
-import "fmt"
 import "github.com/gin-gonic/gin"
 import "net/http"
 
@@ -23,16 +22,16 @@ func main() {
 		} else {
 			// TODO: redirect to 404 for now. eventually
 			// sendthem to page to create the link
-			c.Redirect(http.StatusMovedPermanently, "./404.html")
+			c.String(http.StatusNotFound, "Page not found.")
 		}
 	})
 
 	// TODO: implement post request to add things to db
 	// test later
 	router.POST("/add", func(c *gin.Context) {
-		short := c.Query("short")
-		url := c.Query("url")
-		fmt.Printf("%s=%s", short, url)
+		short := c.PostForm("short")
+		url := c.PostForm("url")
+		c.String(http.StatusOK, short+"="+url)
 	})
 
 	router.Run(":8080") // listen and serve on 0.0.0.0:8080
