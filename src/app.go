@@ -1,68 +1,102 @@
 package main
 
 import (
+	"fmt"
+	"github.com/boltdb/bolt"
 	"github.com/gin-gonic/gin"
 	"log"
 	"net/http"
 )
 
 func main() {
+	const (
+		DB_FILE     = "GOLINKS.DB"
+		DB_BUCKET   = "GOLINKS"
+		DB_KEY_NAME = "short"
+		DB_VAL_NAME = "url"
+	)
+
 	router := gin.Default()
 	router.Use(gin.Logger())
 
-	// temp storage into map for testing
-	linkMap := make(map[string]string)
-	linkMap["goog"] = "http://www.google.com"
-	linkMap["fb"] = "http://www.facebook.com"
+	// Open the my.db data file in your current directory.
+	// It will be created if it doesn't exist.
+	db, err := bolt.Open(DB_FILE, 0600, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	// create a bucket
+	db.Update(func(tx *bolt.Tx) error {
+		_, err := tx.CreateBucket([]byte(DB_BUCKET))
+		if err != nil {
+			return fmt.Errorf("create bucket: %s", err)
+		}
+		return nil
+	})
 
 	router.GET("/:short", func(c *gin.Context) {
 		// TODO: create db, look up in db, if found redirect user to correct one
-		short := c.Param("short")
+		short := c.Param(DB_KEY_NAME)
 
-		val, ok := linkMap[short]
+		// reading from db
+		db.View(func(tx *bolt.Tx) error {
+			b := tx.Bucket([]byte(DB_BUCKET))
+			v := b.Get([]byte(short))
 
-		if ok {
-			log.Println(val)
-			c.Redirect(http.StatusMovedPermanently, val)
-		} else {
-			// TODO: redirect to 404 for now. eventually
-			// sendthem to page to create the link
-			c.String(http.StatusNotFound, "Page not found.")
-		}
+			if v == nil {
+				// TODO: redirect to 404 for now. eventually
+				// sendthem to page to create the link
+				c.String(http.StatusNotFound, "Page not found.")
+			} else {
+				log.Println(v)
+				c.Redirect(http.StatusMovedPermanently, string(v))
+			}
+
+			return nil
+		})
+
 	})
 
-	// TODO: implement post request to add things to db
-	// test later
 	router.POST("/add", func(c *gin.Context) {
-		short := c.PostForm("short")
-		url := c.PostForm("url")
+		short := c.PostForm(DB_KEY_NAME)
+		url := c.PostForm(DB_VAL_NAME)
 
-		val, ok := linkMap[short]
-		// check if key already exists
-		if ok {
-			c.String(http.StatusForbidden, "Already exists.\n"+short+"="+val)
-		} else {
-			linkMap[short] = url
-			c.String(http.StatusOK, "Added succesfully.\n"+short+"="+linkMap[short])
-		}
+		// writing to db
+		db.Update(func(tx *bolt.Tx) error {
+			b := tx.Bucket([]byte(DB_BUCKET))
+			// check if it already exists
+			if b.Get([]byte(short)) == nil {
+				b.Put([]byte(short), []byte(url))
+				c.String(http.StatusOK, "Added succesfully.\n"+short+"="+url)
+			} else {
+				c.String(http.StatusForbidden, "Already exists.\n"+short+"="+url)
+			}
+
+			return err
+		})
 	})
 
-	// TODO: implement post request to add things to db
-	// test later
 	router.POST("/edit", func(c *gin.Context) {
-		short := c.PostForm("short")
-		url := c.PostForm("url")
+		short := c.PostForm(DB_KEY_NAME)
+		url := c.PostForm(DB_VAL_NAME)
 
-		val, ok := linkMap[short]
-		// check if key already exists
-		if ok {
-			linkMap[short] = url
-			c.String(http.StatusOK, "Changed succesfully.\n"+short+"="+linkMap[short])
+		// writing to db
+		db.Update(func(tx *bolt.Tx) error {
+			b := tx.Bucket([]byte(DB_BUCKET))
+			// check if it already exists
 
-		} else {
-			c.String(http.StatusForbidden, "Does not exist"+val)
-		}
+			if b.Get([]byte(short)) == nil {
+				c.String(http.StatusForbidden, "Does not exist.\n"+short+"="+url)
+			} else {
+				b.Put([]byte(short), []byte(url))
+				c.String(http.StatusOK, "Changed succesfully.\n"+short+"="+url)
+			}
+
+			return nil
+		})
 	})
 
-	router.Run(":8080") // listen and serve on 0.0.0.0:8080
+	router.Run(":8000") // listen and serve on 0.0.0.0:8000
 }
